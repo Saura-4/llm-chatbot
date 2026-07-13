@@ -1,0 +1,19 @@
+# Virtual environments
+venv/
+venv_linux/
+.venv/
+
+# Environment secrets
+.env
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Editor/OS junk
+.vscode/
+.idea/
+.DS_Store
+
+# Docker volumes (if any local data dirs appear later)
+postgres_data/
