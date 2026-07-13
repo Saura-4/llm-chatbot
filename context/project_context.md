@@ -1,9 +1,9 @@
 # LLM Chatbot Backend — Project Context
 
 ## Purpose
-Practice project to learn backend fundamentals (FastAPI, JWT auth, Postgres, 
-Redis, Docker, streaming) on low stakes, before applying the same stack to 
-serve the Conversational RAG project (the real portfolio piece).
+An LLM chatbot backend, built with production-grade practices: FastAPI, 
+JWT auth, Postgres, Redis, Docker, and SSE streaming. Portfolio-worthy on 
+its own merits.
 
 ## Learning approach
 - Concepts explained first, then code given to type manually (not copy-paste)
