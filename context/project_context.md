@@ -1,5 +1,5 @@
 # LLM Chatbot Backend — Project Context
-_(regenerated: 2026-07-13)_
+_(regenerated: 2026-07-21)_
 
 ## Purpose
 An LLM chatbot backend, built with production-grade practices: FastAPI,
@@ -9,14 +9,22 @@ its own merits.
 ## Learning approach
 - Concepts explained first, then code given to type manually (not copy-paste)
   into the editor — typing builds retention.
-- Priority is understanding, not speed.
+- Priority is understanding, not speed. Developer will explicitly push back
+  if a session drifts toward code before he's built real familiarity with a
+  new concept/API surface — treat this as a hard rule, not a preference to
+  be balanced against pace.
 - Full request-flow mental model reinforced every session: request →
   validation gate → business logic → response. Not isolated code explanations.
+- Developer wants to learn broadly around a topic, not just the minimum
+  needed to write the next function — it's fine to cover more than gets
+  directly used in code, as long as it's genuinely related to the concept
+  at hand (e.g. HS256 vs RS256, token storage tradeoffs were covered even
+  though not implemented).
 
 ## Tech stack
 - FastAPI (Python)
 - Postgres (via SQLAlchemy ORM)
-- Redis (rate limiting / caching)
+- Redis (rate limiting / caching — not wired up yet)
 - JWT auth (multi-user, since this simulates a real deployed app with
   multiple people using it)
 - Groq API for the LLM itself (chosen over local Ollama — goal is backend
@@ -25,6 +33,7 @@ its own merits.
 - SSE for streaming chat responses token-by-token
 - Docker Compose (Postgres + Redis containers)
 - `bcrypt` used directly (not `passlib`) — see Decisions
+- `PyJWT` for JWT encode/decode (HS256)
 
 ## Environment setup (important, non-obvious)
 - Developer uses Windows, but Docker Desktop doesn't work due to an
@@ -58,14 +67,23 @@ its own merits.
 - [x] Git repo initialized, `.gitignore` set up (excludes .env, venv,
       venv_linux, __pycache__), pushed to GitHub: Saura-4/llm-chatbot
 - [x] `schemas.py` — UserCreate, UserLogin, UserOut, Token
-- [x] `auth.py` — hash_password() / verify_password() (bcrypt direct)
-- [ ] `auth.py` — JWT encode/decode functions — NEXT STEP
-- [ ] `auth_routes.py` — signup/login endpoints
-- [ ] `get_current_user` dependency (JWT verification via Depends())
+- [x] `auth.py` — hash_password() / verify_password() (bcrypt direct, bug
+      found and self-fixed: hashed_bytes was built from plain_bytes instead
+      of the hashed_password argument)
+- [x] `auth.py` — JWT encode/decode functions (create_access_token,
+      decode_access_token — HS256, `sub` + `exp` claims)
+- [x] `auth_routes.py` — signup/login endpoints, auto-login-on-signup
+- [x] `main.py` — auth router mounted at `/auth` prefix
+- [x] `requirements.txt` filled in with real pinned versions
+- [x] Signup/login verified end-to-end via `/docs`: 200 signup, 400
+      duplicate email, 200 login, 401 wrong password — all confirmed
+      working against real Postgres
+- [ ] `get_current_user` dependency (JWT verification via Depends()) —
+      NEXT STEP, concept explained (OAuth2PasswordBearer), file location
+      not yet decided, no code written
 - [ ] Conversation + Message models
 - [ ] Chat endpoint with SSE streaming to Groq
 - [ ] Redis rate limiting on chat endpoint
-- [ ] `requirements.txt` filled in (packages installed ad-hoc so far)
 - [ ] Dockerfile for the FastAPI app itself (currently only Postgres/Redis
       are Dockerized, not the app)
 
@@ -85,30 +103,54 @@ its own merits.
 - Division of responsibility: Pydantic validates shape/type only; business
   logic (wrong email/password, raising HTTPException) is the route
   function's own responsibility — nothing automatic
+- JWT encode: header + payload base64-encoded, HMAC-SHA256 signature
+  computed over `header.payload` using SECRET_KEY, all three glued with dots
+- JWT decode: signature recomputed server-side and compared (integrity
+  check), THEN `exp` checked separately against current time (freshness
+  check) — two independent checks, either can fail alone
+- JWTs are signed, not encrypted — payload is plainly readable by anyone
+  (base64), never put secrets/passwords in it
+- `algorithms=[...]` on decode is a server-defined whitelist, preventing
+  alg-tampering attacks (e.g. attacker setting `alg: none`) — decode never
+  trusts the token's own `alg` header claim
+- JWT revocation problem: no native way to invalidate a token before `exp`;
+  real systems use a blacklist (Redis) or short expiry + refresh tokens
+- Interview-level JWT scope: structure, signed-vs-encrypted, stateless
+  tradeoff (can't revoke natively), HS256 vs RS256 at a conceptual level,
+  client-side storage tradeoffs (XSS vs CSRF), access/refresh token pattern
+- SQLAlchemy query pattern: `db.query(Model).filter(Column == value).first()`
+  — `Column == value` builds a SQL condition object, not a Python bool
+- `db.add()` → `db.commit()` → `db.refresh()` write pattern — refresh is
+  needed to pull server-generated fields (id, created_at) back into the
+  in-memory object
+- `APIRouter()` + `app.include_router(prefix=...)` pattern for organizing
+  routes by feature instead of one flat main.py
+- Same error message/status for "no such email" and "wrong password" on
+  login is deliberate — prevents email enumeration
 
 ## Current file structure
 ````
 llm-chatbot-backend/
 ├── app/
-│   ├── __init__.py
-│   ├── main.py             # bare FastAPI app so far
-│   ├── config.py           # loads DATABASE_URL, SECRET_KEY from .env
-│   ├── database.py         # engine, SessionLocal, Base, get_db()
-│   ├── models.py           # User model only so far
-│   ├── schemas.py          # UserCreate, UserLogin, UserOut, Token — DONE
-│   ├── auth.py             # hash_password, verify_password — DONE
-│   │                       # JWT encode/decode — NOT started, NEXT
-│   ├── redis_client.py     # empty, not started
-│   └── routers/
-│       ├── __init__.py
-│       ├── auth_routes.py  # empty, not started
-│       └── chat_routes.py  # empty, not started
+│ ├── init.py
+│ ├── main.py # FastAPI app + auth router mounted at /auth
+│ ├── config.py # loads DATABASE_URL, SECRET_KEY from .env
+│ ├── database.py # engine, SessionLocal, Base, get_db()
+│ ├── models.py # User model only so far
+│ ├── schemas.py # UserCreate, UserLogin, UserOut, Token — DONE
+│ ├── auth.py # hash_password, verify_password,
+│ │ # create_access_token, decode_access_token — DONE
+│ ├── redis_client.py # empty, not started
+│ └── routers/
+│ ├── init.py
+│ ├── auth_routes.py # signup + login — DONE, tested end-to-end
+│ └── chat_routes.py # empty, not started
 ├── create_tables.py
-├── requirements.txt         # not filled in yet, packages installed ad-hoc
-├── docker-compose.yml       # postgres + redis services defined
-├── Dockerfile               # empty, not started
-├── .env                     # DATABASE_URL, SECRET_KEY (gitignored)
-├── .env.example             # should be added, template for the above
+├── requirements.txt # filled in with real pinned versions — DONE
+├── docker-compose.yml # postgres + redis services defined
+├── Dockerfile # empty, not started
+├── .env # DATABASE_URL, SECRET_KEY (gitignored)
+├── .env.example # template for the above
 └── .gitignore
 ````
 
@@ -116,6 +158,13 @@ llm-chatbot-backend/
 - Using `bcrypt` directly instead of `passlib` — passlib has a known
   compatibility bug with bcrypt>=4.1 (`AttributeError: module 'bcrypt' has
   no attribute '__about__'`). Avoided rather than pinned.
+- Signup performs auto-login: returns a `Token` immediately (not just the
+  created user) — deliberate choice over the alternative of signup-then-
+  separate-login.
+- `auth.py`'s JWT functions raise a plain `ValueError` on invalid/expired
+  tokens rather than letting PyJWT's own exceptions propagate — keeps
+  `auth.py` framework-agnostic; the HTTP-translation (401) belongs to
+  whichever layer calls it (route or dependency), not to this module.
 
 ## How I learn (standing preferences)
 - Full request-flow mental model every time: request → validation gate →
@@ -125,7 +174,18 @@ llm-chatbot-backend/
   not delegation.
 - Session scope kept deliberately narrow per chat — better to fully
   understand one unit than rush through several shallowly.
+- Learning should not be bounded by "only what this exact function needs" —
+  genuinely related concepts (even ones not directly coded) are wanted.
+  Move to code only once nothing else *relevant* is left to cover, not
+  merely once the minimum viable understanding is reached.
 
 ## Next session's starting point
-JWT issuing (encode/decode functions in `auth.py`) → wire up
-`auth_routes.py` signup/login endpoints → `get_current_user` dependency.
+Decide where `get_current_user` lives (new `app/dependencies.py` vs. inside
+`auth.py`), then build it: `OAuth2PasswordBearer(tokenUrl="/auth/login")`
+scheme + a dependency function that extracts the token, decodes it via
+`decode_access_token()`, looks up the `User` by the `sub` claim, and returns
+the `User` object (or raises `HTTPException(401)`). This is the last piece
+needed before any protected route (chat endpoint) can know who's calling it.
+```
+
+---
