@@ -158,3 +158,79 @@ that takes the extracted token, calls `decode_access_token()`, pulls `sub`
 out of the payload, queries `User` by email, and either returns the `User`
 object or raises `HTTPException(401)` on any failure. This is the last item
 before protected routes (chat endpoint) become possible.
+
+## Session 4: get_current_user Dependency
+
+**Date:** 2026-07-23
+**Scope in:** Decided file location for the dependency (new `app/dependencies.py`,
+kept separate from `auth.py` to preserve its framework-agnostic status).
+Built `get_current_user()`: `OAuth2PasswordBearer` scheme, token decode via
+`decode_access_token()`, `sub` claim extraction, DB lookup by email, single
+collapsed 401 (`credentials_exception`) across all failure paths. Added a
+throwaway `GET /auth/me` route in `auth_routes.py` purely to verify the
+dependency end-to-end. Tested all three paths (no header / garbage token /
+real token) via curl from Windows PowerShell.
+**Scope deferred:** none — this closes out the item that was open at the
+end of Session 3.
+
+**Concepts covered, with confirmed understanding (comprehension-checked,
+correct answer stated first):**
+- `tokenUrl` on `OAuth2PasswordBearer` is metadata consumed only by Swagger
+  UI's "Authorize" popup (tells it where to POST a login attempt); it is
+  never read during real request handling — actual token extraction just
+  reads the `Authorization` header directly, `tokenUrl` or not.
+- The "Authorize" button only appears in `/docs` once at least one route
+  in the app actually depends on `oauth2_scheme` (directly or via
+  `get_current_user`) — FastAPI builds the OpenAPI security schema by
+  scanning routes, not by the mere existence of `OAuth2PasswordBearer`
+  somewhere in the codebase.
+- When a request has no `Authorization` header at all, `oauth2_scheme`
+  itself rejects it with a 401 before `get_current_user`'s function body
+  ever runs — dependency resolution happens before the function executes,
+  so `credentials_exception` never fires for this specific case.
+- `decode_access_token()` returns the payload dict (not a `User`), so the
+  `sub` claim (the email) must be pulled out and used for a separate DB
+  query to get the actual `User` row.
+- Collapsing "token invalid/expired" and "user not found" into one
+  identical 401 message is deliberate, for the same reason login collapses
+  "no such email" and "wrong password" — prevents an attacker from
+  learning which specific check failed (and, for the user-not-found case,
+  prevents leaking whether a signature-valid token's `sub` still maps to
+  a live account).
+- Swagger UI's Authorize popup for `OAuth2PasswordBearer` only exposes
+  username/password/client_id/client_secret fields (form-encoded, sent to
+  `tokenUrl`) — there is no field to paste a raw bearer token directly, and
+  since this app's `/auth/login` expects a JSON body (not form-encoded
+  username/password), using the popup's login form itself throws a 422.
+
+**Initial misunderstandings (resolved — for pattern-tracking only):**
+- `tokenUrl`'s role: initially unclear whether it had any functional effect
+  on auth; corrected via a step-by-step Authorize-popup walkthrough to
+  "Swagger-only convenience metadata, not read by real request handling."
+- Raising the collapsed exception: initially written as `credentials_exception()`
+  (calling it like a function); corrected to `raise credentials_exception`
+  (it's already a constructed `HTTPException` object, not a callable).
+- Variable naming: initially `Current_user` (PascalCase); corrected to
+  `current_user` (snake_case), consistent with the rest of the codebase.
+
+**Files touched:**
+- `app/dependencies.py` — new file. `oauth2_scheme` (`OAuth2PasswordBearer`)
+  + `get_current_user()` dependency, fully working.
+- `app/routers/auth_routes.py` — added `GET /me` (throwaway verification
+  route, returns `UserOut` for the authenticated user).
+
+**Other notes (environment/workflow facts, not project state):**
+- Swagger UI's Authorize popup for this scheme has no raw-token-paste
+  field in this version, so verification was done via `curl.exe` from
+  Windows PowerShell instead (the app runs natively on Windows per the
+  existing port-forwarding setup — no need to touch the VM for this).
+- All three cases confirmed via curl: no header → 401 (FastAPI's own
+  "Not authenticated", from `oauth2_scheme`, not app code); garbage token
+  → 401 `"Could not validate credentials"` (app's `credentials_exception`);
+  real token from `/auth/login` → 200 with correct `id`/`email`/`created_at`.
+
+**Next session scope:**
+Conversation + Message models (SQLAlchemy) in `models.py`: a `Conversation`
+belongs to a `User` (foreign key), and a `Message` belongs to a
+`Conversation`, storing role (user/assistant) and content, in order. This
+is the schema needed before the chat endpoint can persist anything.

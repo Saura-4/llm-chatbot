@@ -1,5 +1,4 @@
 # LLM Chatbot Backend — Project Context
-_(regenerated: 2026-07-21)_
 
 ## Purpose
 An LLM chatbot backend, built with production-grade practices: FastAPI,
@@ -52,6 +51,11 @@ its own merits.
 - Workflow: start VM → `cd ~/work/RAG/llm-chatbot-backend` → `docker compose
   up -d` inside VM → then all actual coding/running of FastAPI happens from
   Windows PowerShell as normal.
+- Testing protected routes is also done from Windows PowerShell via
+  `curl.exe` (not `curl`, which is aliased to `Invoke-WebRequest` on
+  PowerShell) — Swagger UI's Authorize popup for `OAuth2PasswordBearer`
+  has no field to paste a raw token, only username/password/client
+  fields, which don't match this app's JSON-body `/auth/login`.
 - A `venv_linux` was created once inside the VM for a native-install
   experiment, then deleted — not needed since port forwarding solved it.
   Ignore any references to it.
@@ -78,10 +82,16 @@ its own merits.
 - [x] Signup/login verified end-to-end via `/docs`: 200 signup, 400
       duplicate email, 200 login, 401 wrong password — all confirmed
       working against real Postgres
-- [ ] `get_current_user` dependency (JWT verification via Depends()) —
-      NEXT STEP, concept explained (OAuth2PasswordBearer), file location
-      not yet decided, no code written
-- [ ] Conversation + Message models
+- [x] `app/dependencies.py` — `get_current_user()` dependency, built and
+      tested end-to-end via curl: no-header → 401 (from `oauth2_scheme`
+      itself), garbage token → 401 (`credentials_exception`), real token →
+      200 with correct user
+- [x] `GET /auth/me` — throwaway verification route added to
+      `auth_routes.py`, confirmed the dependency works; can stay or be
+      stripped later
+- [ ] Conversation + Message models — **NEXT STEP**. A `Conversation`
+      belongs to a `User` (FK), a `Message` belongs to a `Conversation`
+      (role + content + ordering). No code written yet.
 - [ ] Chat endpoint with SSE streaming to Groq
 - [ ] Redis rate limiting on chat endpoint
 - [ ] Dockerfile for the FastAPI app itself (currently only Postgres/Redis
@@ -127,6 +137,26 @@ its own merits.
   routes by feature instead of one flat main.py
 - Same error message/status for "no such email" and "wrong password" on
   login is deliberate — prevents email enumeration
+- `OAuth2PasswordBearer`'s `tokenUrl` is Swagger-only convenience metadata
+  (tells the Authorize popup where to send a login attempt) — never read
+  during real request handling; token extraction only reads the
+  `Authorization` header itself
+- The `/docs` "Authorize" button only appears once at least one route
+  actually depends on `oauth2_scheme` — FastAPI scans routes to build the
+  OpenAPI security schema, it isn't triggered by the scheme merely existing
+  in the codebase
+- Dependency resolution order: `Depends(oauth2_scheme)` inside
+  `get_current_user`'s signature must succeed before the function body
+  runs — a missing `Authorization` header is rejected by `oauth2_scheme`
+  itself (FastAPI's own 401), never reaching the function's own error
+  handling
+- `decode_access_token()` returns the payload dict, not a `User` — the
+  `sub` claim (email) must be extracted and used for a separate DB lookup
+  to get the actual `User` row
+- Collapsing distinct internal failure reasons (invalid/expired token vs.
+  user not found) into one identical 401 response is deliberate, same
+  principle as login's identical error for bad email vs. bad password —
+  prevents leaking which specific check failed
 
 ## Current file structure
 ````
@@ -140,10 +170,11 @@ llm-chatbot-backend/
 │ ├── schemas.py # UserCreate, UserLogin, UserOut, Token — DONE
 │ ├── auth.py # hash_password, verify_password,
 │ │ # create_access_token, decode_access_token — DONE
+│ ├── dependencies.py # get_current_user (OAuth2PasswordBearer) — DONE
 │ ├── redis_client.py # empty, not started
 │ └── routers/
 │ ├── init.py
-│ ├── auth_routes.py # signup + login — DONE, tested end-to-end
+│ ├── auth_routes.py # signup + login + /me — DONE, tested end-to-end
 │ └── chat_routes.py # empty, not started
 ├── create_tables.py
 ├── requirements.txt # filled in with real pinned versions — DONE
@@ -165,6 +196,13 @@ llm-chatbot-backend/
   tokens rather than letting PyJWT's own exceptions propagate — keeps
   `auth.py` framework-agnostic; the HTTP-translation (401) belongs to
   whichever layer calls it (route or dependency), not to this module.
+- `get_current_user` lives in a new `app/dependencies.py`, not inside
+  `auth.py` — keeps `auth.py` free of any FastAPI imports (framework-
+  agnostic), and gives future `Depends()`-based functions (e.g. an
+  admin-only check) a dedicated home.
+- `credentials_exception` (the collapsed 401) is defined once as a local
+  variable at the top of `get_current_user`'s body, not at module level —
+  its scope/purpose is entirely local to that one function.
 
 ## How I learn (standing preferences)
 - Full request-flow mental model every time: request → validation gate →
@@ -180,12 +218,10 @@ llm-chatbot-backend/
   merely once the minimum viable understanding is reached.
 
 ## Next session's starting point
-Decide where `get_current_user` lives (new `app/dependencies.py` vs. inside
-`auth.py`), then build it: `OAuth2PasswordBearer(tokenUrl="/auth/login")`
-scheme + a dependency function that extracts the token, decodes it via
-`decode_access_token()`, looks up the `User` by the `sub` claim, and returns
-the `User` object (or raises `HTTPException(401)`). This is the last piece
-needed before any protected route (chat endpoint) can know who's calling it.
-```
-
----
+Design and build `Conversation` and `Message` SQLAlchemy models in
+`models.py`: a `Conversation` belongs to a `User` (foreign key to
+`users.id`), and a `Message` belongs to a `Conversation` (foreign key),
+storing a role (user/assistant) and content, with ordering (created_at or
+an explicit sequence). This is the schema the chat endpoint will read from
+and write to — nothing here depends on Groq or SSE yet, it's pure data
+modeling first.
