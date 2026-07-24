@@ -234,3 +234,70 @@ Conversation + Message models (SQLAlchemy) in `models.py`: a `Conversation`
 belongs to a `User` (foreign key), and a `Message` belongs to a
 `Conversation`, storing role (user/assistant) and content, in order. This
 is the schema needed before the chat endpoint can persist anything.
+
+## Session 5: Conversation & Message ORM Design
+
+**Date:** 2026-07-25
+
+**Scope in:**
+Designed the Conversation and Message database schema from first principles, learned SQLAlchemy relationships in depth, implemented both ORM models, and finalized the database design before introducing Alembic.
+
+**Scope deferred:**
+Alembic migrations were intentionally postponed until the database design and SQLAlchemy relationship system were fully understood.
+
+---
+
+### Concepts covered, with confirmed understanding (comprehension-checked, correct answer stated first):
+
+- A Conversation is a first-class database entity because it owns metadata (title, timestamps, owner) and groups related messages.
+- A Message belongs to exactly one Conversation through a foreign key.
+- The chatbot's memory lives inside the database; every request reconstructs conversation history before calling the LLM.
+- SQLAlchemy `relationship()` defines object navigation rather than immediately executing SQL.
+- SQLAlchemy relationships use lazy loading by default; related tables are queried only when the relationship attribute is accessed.
+- `ForeignKey` supplies SQLAlchemy with the information required to determine how two tables are joined.
+- Without a valid `ForeignKey`, SQLAlchemy cannot infer join conditions for relationships.
+- `back_populates` connects two relationship definitions so both sides stay synchronized in memory.
+- `cascade="all, delete-orphan"` deletes dependent child records when the parent is removed or when children become orphaned.
+- `server_default=func.now()` delegates timestamp creation to PostgreSQL rather than Python.
+- `onupdate=func.now()` automatically updates modification timestamps whenever a row changes.
+- Conversation titles are appropriately stored as `String`; message bodies are appropriately stored as `Text`.
+- One-to-many relationships return a list of ORM objects; many-to-one relationships return a single ORM object.
+- Database enums enforce valid values and provide stronger integrity than unrestricted strings.
+- Extending message roles (e.g. adding `SYSTEM`) should expand the existing enum rather than introducing another database column.
+
+---
+
+### Initial misunderstandings (resolved — for pattern-tracking only):
+
+- Conversation table: initially viewed mainly as a container for messages; corrected to understanding it as an independent entity with its own lifecycle and metadata.
+- SQLAlchemy relationship: initially assumed it immediately queried the database; corrected to understanding that it registers navigation instructions and performs lazy loading.
+- Relationship mapping: initially unclear how SQLAlchemy determines joins; corrected to understanding that `ForeignKey` provides the join information.
+- Bidirectional relationships: initially viewed as independent definitions; corrected to understanding that `back_populates` synchronizes both sides of the relationship.
+- Message roles: initially implemented using `String`; corrected to preferring a database-backed Enum for stronger integrity.
+
+---
+
+### Files touched:
+
+- `app/models.py` — implemented `Conversation` model.
+- `app/models.py` — implemented `Message` model.
+- `app/models.py` — added bidirectional relationships between User, Conversation, and Message.
+
+
+---
+
+### Other notes (environment/workflow facts, not project state):
+
+- Database schema was intentionally finalized before introducing Alembic to separate ORM understanding from migration mechanics.
+
+---
+
+### Working-style event (only if it produced a standing preference):
+
+- None.
+
+---
+
+### Next session scope:
+
+Introduce Alembic from first principles, explain the relationship between SQLAlchemy models, migration files, and the PostgreSQL schema, generate the migration for Conversation and Message models, inspect the generated migration, execute it against PostgreSQL, and verify the resulting database schema.
