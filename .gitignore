@@ -17,3 +17,5 @@ __pycache__/
 
 # Docker volumes (if any local data dirs appear later)
 postgres_data/
+
+archive
