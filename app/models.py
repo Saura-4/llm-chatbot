@@ -36,7 +36,7 @@ class Conversation(Base):
 
     user_id=Column(
         Integer,
-        ForeignKey("user.id"),
+        ForeignKey("users.id"),
         nullable=False
     )
 
@@ -47,13 +47,15 @@ class Conversation(Base):
 
     created_at=Column(
         DateTime(timezone=True),
-        server_default=func.now()
+        server_default=func.now(),
+        nullable=False
     )
 
     updated_at=Column(
         DateTime(timezone=True),
         server_default=func.now(),
-        onupdate=func.now()
+        onupdate=func.now(),
+        nullable=False
     )
 
     user=relationship(

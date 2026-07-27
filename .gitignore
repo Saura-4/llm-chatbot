@@ -19,3 +19,5 @@ __pycache__/
 postgres_data/
 
 archive
+
+__pycache__
