@@ -16,6 +16,7 @@ Build a production-grade LLM chatbot backend using FastAPI, PostgreSQL, SQLAlche
 - Once a concept is mastered, build upon it rather than re-teaching it.
 - Push back whenever implementation starts before the conceptual model is solid.
 - Every important line of code should have a clear reason for existing.
+- Code is shown once the mental model is solid — not withheld indefinitely — since exposure to real code patterns is still needed before writing them unaided. Code is then typed manually into the project to internalize it.
 
 ---
 
@@ -74,12 +75,19 @@ Build a production-grade LLM chatbot backend using FastAPI, PostgreSQL, SQLAlche
 - [x] Migration reviewed
 - [x] Migration executed
 - [x] Database schema updated successfully
+- [x] Conversation schemas (`ConversationCreate`, `ConversationOut`, `MessageOut`, `ConversationDetail`)
+- [x] `POST /conversations` (create)
+- [x] `GET /conversations` (list, filter-based ownership)
+- [x] `GET /conversations/{conversation_id}` (fetch-then-verify ownership, 404/403)
+- [ ] `PATCH /conversations/{conversation_id}` (rename)
+- [ ] `DELETE /conversations/{conversation_id}`
+- [ ] Message persistence
 
 ---
 
 # Next milestones
 
-- [ ] Conversation CRUD
+- [ ] Rename/delete conversation endpoints
 - [ ] Message persistence
 - [ ] Chat endpoint
 - [ ] Groq integration
@@ -104,6 +112,7 @@ Build a production-grade LLM chatbot backend using FastAPI, PostgreSQL, SQLAlche
 - OAuth2PasswordBearer
 - Pydantic validation
 - SQLAlchemy CRUD workflow
+- Why `get_current_user()` performs a DB lookup instead of trusting JWT claims alone (JWT signature = cryptographic validity only; DB lookup = current account state, revocation/deletion/suspension safety). Redis caching of this lookup is the standard optimization, not a redesign.
 
 ## SQLAlchemy
 
@@ -114,13 +123,31 @@ Build a production-grade LLM chatbot backend using FastAPI, PostgreSQL, SQLAlche
 - Relationships
 - `relationship()`
 - `back_populates`
-- Lazy loading
+- Lazy loading — confirmed with real code: accessing a relationship attribute (e.g. `conversation.messages`) is what silently triggers the underlying `SELECT`, not an explicit call.
 - Cascades
 - Database normalization
 - `server_default`
 - `func.now()`
 - `onupdate`
 - Enum columns
+- Indexes as the mechanism that makes single-table, foreign-key-filtered queries fast at scale (B-tree lookup vs. full scan); why per-user tables would be an anti-pattern.
+- `primary_key=True` on an `Integer` column maps to a Postgres `SERIAL`/`IDENTITY`, which auto-generates `id` at insert time — this is why `db.refresh()` is needed after `db.commit()`.
+- N+1 query problem — named and understood conceptually (not yet hit in practice); relevant if relationships are lazy-loaded across a list rather than a single object.
+
+## Pydantic / API schema design
+
+- Schemas (Pydantic) vs. models (SQLAlchemy): schemas define the API boundary contract, models define storage.
+- `from_attributes = True` — required because SQLAlchemy objects expose data as attributes, not dict keys; Pydantic does `getattr(obj, field_name)` per field.
+- The link between a schema field and an ORM object is a **plain string name match** — e.g. `messages: list[MessageOut]` only works because the field is literally named `messages`, matching the `relationship()` attribute name exactly. The type (`MessageOut`) only governs the shape enforced on what's found, not where it's found. Renaming the field breaks it silently (`AttributeError` at request time, not caught by type checking).
+- Schema inheritance (`class ConversationDetail(ConversationOut)`) used to give different endpoints different response sizes (list view vs. detail view) rather than always returning full nested data.
+- Preferring a stricter type (e.g. `role: MessageRole` over `role: str`) when the underlying model already constrains the value, since `MessageRole(str, Enum)` still serializes identically to plain strings.
+
+## FastAPI routing
+
+- Three distinct parameter sources in one function signature, distinguished purely by declaration style: Pydantic model type → request body; `Depends(...)` → dependency injection; plain type matching a `{name}` in the path → path parameter.
+- `response_model=` on the decorator is what triggers schema-based response conversion; the route function itself just returns the raw ORM object.
+- Two ownership-check patterns: **filter-based** (bake `user_id = current_user.id` into the query itself — used for list endpoints) vs. **fetch-then-verify** (fetch by untrusted client-supplied ID first, then explicitly check existence (404) before ownership (403) — used for single-resource endpoints). Existence must be checked before ownership to avoid a crash on `None`.
+- This fetch-then-verify pattern exists specifically to prevent IDOR (Insecure Direct Object Reference) vulnerabilities.
 
 ## Alembic
 
@@ -174,7 +201,7 @@ Fields
 
 - id
 - user_id
-- title
+- title (`nullable=False`; defaulted to `"New Conversation"` in application code when the client omits it — see Decisions)
 - created_at
 - updated_at
 
@@ -211,6 +238,9 @@ Relationships
 - PostgreSQL generates timestamps.
 - SQLAlchemy Enum is used for message roles.
 - Alembic manages every future schema change.
+- `Conversation.title` stays `nullable=False` at the DB level; missing/empty client-supplied titles are defaulted to `"New Conversation"` in the route (`payload.title or "New Conversation"`) rather than relaxing the column — avoids a migration, mirrors how chat UIs show a placeholder title immediately.
+- Conversation CRUD lives in its own `conversation_routes.py`, separate from `chat_routes.py`, which is reserved for the future Groq/SSE chat endpoint — keeps "manage conversations" and "talk to the LLM" as separate concerns.
+- `MessageOut.role` is typed as `MessageRole` (not `str`) to match the model's actual constraint.
 
 ---
 
@@ -233,7 +263,8 @@ llm-chatbot-backend/
 │   ├── redis_client.py
 │   └── routers/
 │       ├── auth_routes.py
-│       └── chat_routes.py
+│       ├── chat_routes.py
+│       └── conversation_routes.py
 ├── docker-compose.yml
 ├── Dockerfile
 ├── requirements.txt
@@ -254,16 +285,18 @@ llm-chatbot-backend/
 - Small focused sessions with minimal context switching.
 - Every important line should have a clear purpose.
 - Once a concept is mastered, continue building on it rather than repeating it.
+- Code is given once the mental model is solid, then typed manually — not withheld indefinitely, since real code exposure is part of building the ability to write it unaided.
 
 ---
 
 # Next session
 
-Implement the conversation layer.
+Implement rename (`PATCH`) and delete (`DELETE`) endpoints for conversations, then move to message persistence.
 
 Suggested order:
 
-1. Conversation CRUD
-2. Message persistence
-3. Chat endpoint
-4. Groq integration
+1. `PATCH /conversations/{conversation_id}` (rename) — same fetch-then-verify pattern already covered
+2. `DELETE /conversations/{conversation_id}`
+3. Message persistence
+4. Chat endpoint
+5. Groq integration

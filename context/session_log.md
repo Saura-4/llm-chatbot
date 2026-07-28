@@ -203,3 +203,39 @@ Introduce Alembic from first principles, explain the relationship between SQLAlc
 
 **Next session scope:**
 Implement Conversation CRUD followed by message persistence to prepare the foundation for the chat endpoint.
+
+## Session 8: Conversation CRUD (Create, List, Get)
+
+**Date:** 2026-07-28
+
+**Scope in:** Designed and implemented `POST /conversations`, `GET /conversations`, and `GET /conversations/{conversation_id}`, including the full schema layer (`ConversationCreate`, `ConversationOut`, `MessageOut`, `ConversationDetail`) and the ownership-check patterns backing each endpoint.
+
+**Scope deferred:** Rename (`PATCH`) and delete (`DELETE`) endpoints deferred to next session, to let the fetch-then-verify pattern land fully through `GET /conversations/{conversation_id}` first rather than repeating it three times in one session.
+
+**Concepts covered, with confirmed understanding (comprehension-checked, correct answer stated first):**
+- Indexing (B-tree lookup on a foreign key) is why a single shared table scales to millions of rows without needing per-user tables.
+- Existence must be checked before ownership in `get_conversation`, since checking `.user_id` on a `None` result would crash with an `AttributeError` rather than return a clean 404.
+- Filter-based ownership (`list_conversations`, condition baked into the SQL query) and fetch-then-verify ownership (`get_conversation`, fetch by untrusted ID then explicitly check) are two distinct patterns suited to list vs. single-resource endpoints; the latter exists specifically to prevent IDOR.
+- `get_current_user()`'s DB lookup exists for current-account-state validity (deletion/suspension), not just to decode the token — JWT signature verification alone only proves the token wasn't forged, not that the account is still valid right now.
+- `Conversation.title` being `nullable=False` while `ConversationCreate.title` allows `None` was a genuine mismatch; resolved by defaulting in the route (`payload.title or "New Conversation"`) rather than relaxing the DB constraint.
+- `primary_key=True` on an `Integer` column becomes a Postgres auto-incrementing column; `db.refresh()` is needed after `db.commit()` specifically to pull the DB-generated `id` and timestamps back into the Python object.
+- Lazy loading, confirmed with real code: `conversation.messages` is not populated automatically on `return conversation` — it's Pydantic's `from_attributes` mechanism accessing the `messages` attribute (via `getattr`) while building `ConversationDetail` that triggers the underlying `SELECT`.
+- The link between a schema field and an ORM attribute is a plain name match (`messages` field ↔ `messages` relationship attribute) — not related to imports or the field's declared type; a renamed field would fail silently until request time.
+
+**Initial misunderstandings (resolved — for pattern-tracking only):**
+- Schema vs. model title constraint: initially unnoticed that `ConversationCreate.title: str | None` conflicted with `Conversation.title` being `nullable=False`; corrected by defaulting the value in the route instead of relaxing the column.
+- Relationship-to-schema linkage: initially assumed `messages: list[MessageOut]` fetches data because `Message` is somehow referenced; corrected to understanding it's solely a field-name match against the SQLAlchemy `relationship()` attribute.
+
+**Files touched:**
+- `app/schemas.py` — added `ConversationCreate`, `ConversationOut`, `MessageOut` (typed with `MessageRole`), `ConversationDetail`.
+- `app/routers/conversation_routes.py` — new file; added `create_conversation`, `list_conversations`, `get_conversation`.
+- `app/main.py` — registered `conversation_routes.router`.
+
+**Other notes (environment/workflow facts, not project state):**
+- None.
+
+**Working-style event (only if it produced a standing preference):**
+- Preference refined on when code is shown relative to conceptual understanding; see `project_context.md` ("How I learn") for the authoritative rule.
+
+**Next session scope:**
+Implement `PATCH /conversations/{conversation_id}` (rename) and `DELETE /conversations/{conversation_id}`, reusing the fetch-then-verify pattern from `get_conversation`, then move to message persistence.
