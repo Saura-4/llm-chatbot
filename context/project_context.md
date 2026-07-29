@@ -79,8 +79,8 @@ Build a production-grade LLM chatbot backend using FastAPI, PostgreSQL, SQLAlche
 - [x] `POST /conversations` (create)
 - [x] `GET /conversations` (list, filter-based ownership)
 - [x] `GET /conversations/{conversation_id}` (fetch-then-verify ownership, 404/403)
-- [ ] `PATCH /conversations/{conversation_id}` (rename)
-- [ ] `DELETE /conversations/{conversation_id}`
+- [x] `PATCH /conversations/{conversation_id}` (rename)
+- [x] `DELETE /conversations/{conversation_id}`
 - [ ] Message persistence
 
 ---
@@ -291,12 +291,8 @@ llm-chatbot-backend/
 
 # Next session
 
-Implement rename (`PATCH`) and delete (`DELETE`) endpoints for conversations, then move to message persistence.
+Move to message persistence.
 
 Suggested order:
 
-1. `PATCH /conversations/{conversation_id}` (rename) — same fetch-then-verify pattern already covered
-2. `DELETE /conversations/{conversation_id}`
-3. Message persistence
-4. Chat endpoint
-5. Groq integration
+1. Message persistence

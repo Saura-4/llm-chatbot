@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from datetime import datetime
 from app.models import MessageRole
 
@@ -49,3 +49,18 @@ class MessageOut(BaseModel):
 
 class ConversationDetail(ConversationOut):
     messages: list[MessageOut]
+
+
+class ConversationRename(BaseModel):
+    title: str
+
+    @field_validator("title")
+    @classmethod
+    def normalize_title(cls,value:str) ->str:
+        value=" ".join(value.split())
+
+        if not value:
+            raise ValueError("Title cannot be empty.")
+
+        return value
+    
