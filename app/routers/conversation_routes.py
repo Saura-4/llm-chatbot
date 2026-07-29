@@ -3,8 +3,9 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import get_current_user
-from app.models import User,Conversation
-from app.schemas import ConversationCreate, ConversationDetail, ConversationOut, ConversationRename
+from app.models import User, MessageRole      
+from app.schemas import ConversationCreate, ConversationDetail, ConversationOut, ConversationRename ,MessageCreate, MessageOut
+from app.crud import conversation as conversation_crud, message as message_crud
 
 router=APIRouter()
 
@@ -14,13 +15,8 @@ def create_conversation(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    conversation = Conversation(
-        user_id=current_user.id,
-        title= payload.title or "New Conversation",
-    )
-    db.add(conversation)
-    db.commit()
-    db.refresh(conversation)
+    conversation = conversation_crud.create_conversation(db,current_user.id,payload.title or "New Conversation")
+    
     return conversation
 
 
@@ -29,11 +25,8 @@ def list_conversations(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return (
-        db.query(Conversation)
-        .filter(Conversation.user_id == current_user.id)
-        .all()
-    )
+    conversation_list=conversation_crud.list_conversations(db,current_user.id)
+    return conversation_list
 
 
 @router.get("/conversations/{conversation_id}", response_model=ConversationDetail)
@@ -42,7 +35,7 @@ def get_conversation(
         db: Session = Depends(get_db),
         current_user: User = Depends( get_current_user),
 ):
-    conversation=db.query(Conversation).filter(Conversation.id == conversation_id).first()
+    conversation=conversation_crud.get_conversation_by_id(db,conversation_id)
 
     if conversation is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
@@ -59,11 +52,7 @@ def rename_conversation(
     db: Session =Depends(get_db),
     current_user: User= Depends(get_current_user),
 ):
-    conversation =(
-        db.query(Conversation)
-        .filter(Conversation.id == conversation_id)
-        .first()
-        )
+    conversation =conversation_crud.get_conversation_by_id(db,conversation_id)
 
     if conversation is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
@@ -74,9 +63,7 @@ def rename_conversation(
     if conversation.title == payload.title:
         return conversation 
     
-    conversation.title = payload.title
-    db.commit()
-    db.refresh(conversation)
+    conversation_crud.rename_conversation(db,conversation,payload.title)
 
     return conversation
 
@@ -86,11 +73,7 @@ def delete_conversation(
     db: Session= Depends(get_db),
     current_user: User= Depends(get_current_user),
 ):
-    conversation=(
-        db.query(Conversation)
-        .filter(Conversation.id == conversation_id)
-        .first()
-    )
+    conversation=conversation_crud.get_conversation_by_id(db, conversation_id)
 
     if conversation is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
@@ -98,6 +81,23 @@ def delete_conversation(
     if conversation.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your conversation")
 
-    db.delete(conversation)
-    db.commit()
+    conversation_crud.delete_conversation(db,conversation)
 
+@router.post("/conversations/{conversation_id}/messages",response_model=MessageOut)
+def create_message(
+    payload: MessageCreate,
+    conversation_id: int,
+    db: Session=Depends(get_db),
+    current_user: User=Depends(get_current_user),
+):
+    conversation=conversation_crud.get_conversation_by_id(db,conversation_id)
+
+    if conversation is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+
+    if conversation.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your conversation")
+
+    message=message_crud.create_message(db,conversation_id,MessageRole.USER,payload.content)
+
+    return message

@@ -63,4 +63,17 @@ class ConversationRename(BaseModel):
             raise ValueError("Title cannot be empty.")
 
         return value
-    
+
+
+class MessageCreate(BaseModel):
+    content:str
+
+    @field_validator("content")
+    @classmethod
+    def normalize_content(cls, value: str) -> str:
+        value = value.strip()
+
+        if not value:
+            raise ValueError("Message cannot be empty.")
+
+        return value
