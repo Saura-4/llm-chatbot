@@ -77,3 +77,11 @@ class MessageCreate(BaseModel):
             raise ValueError("Message cannot be empty.")
 
         return value
+
+class ChatRequest(BaseModel):
+    conversation_id: int 
+    content: str
+
+class ChatResponse(BaseModel):
+    user_message: MessageOut
+    assistant_message: MessageOut

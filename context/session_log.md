@@ -543,3 +543,48 @@ Implement message persistence by designing the `Message` creation flow, understa
 ### Next session scope:
 
 Design the chat endpoint (`POST /chat`) from first principles: request/response shape, how conversation history gets reconstructed and sent to Groq, and where `create_message` gets called (twice — user message, then assistant reply) — before introducing the actual Groq API call or SSE streaming.
+
+
+## Session 11: Chat endpoint architecture and Groq integration
+
+**Date:** 2026-07-30
+
+**Scope in:** Designed the `/chat` endpoint from first principles, finalized request/response flow, integrated the Groq SDK through a dedicated service layer, and verified the implementation end-to-end with authenticated multi-turn conversations.
+
+**Scope deferred:** SSE streaming was intentionally deferred until the non-streaming chat flow was fully understood and verified.
+
+**Concepts covered, with confirmed understanding (comprehension-checked, correct answer stated first):**
+- Authentication identity comes from the JWT dependency, not from fields in the request body.
+- The `/chat` request body only needs `conversation_id` and the new user message content because all prior context already exists on the server.
+- LLMs are stateless, so conversation history must be reconstructed from persisted messages before every LLM request.
+- User messages should be persisted before calling the LLM because they represent an independent user action regardless of LLM success.
+- Chat-completion APIs allow consecutive `user` messages; alternating user/assistant turns are conventional but not required.
+- Assistant messages can only be persisted after the LLM successfully returns generated content.
+- External LLM communication belongs in a dedicated service module rather than the router, following the same separation-of-concerns principle used for the CRUD layer.
+- The official Groq SDK is the appropriate integration layer because it abstracts protocol details while preserving the underlying HTTP request model.
+- Returning full `MessageOut` objects provides the canonical persisted representation of messages, including server-generated metadata needed by clients.
+- A successful multi-turn conversation confirmed that conversation history reconstruction, ordering, persistence, and LLM context passing all function correctly.
+
+**Initial misunderstandings (resolved — for pattern-tracking only):**
+- JWT placement: initially included JWT as part of the request body; corrected to authentication via the Authorization header and dependency injection.
+- Chat history validity: initially questioned whether consecutive user messages would invalidate the LLM request; corrected to understanding they are valid.
+- Chat response design: initially viewed returning persisted message objects as redundant; corrected to understanding their role in client reconciliation and future frontend behavior.
+- User/assistant relationship: initially assumed both messages became coupled because they were returned together; corrected to understanding that only the HTTP response groups them while the database keeps them independent.
+
+**Files touched:**
+- `chat_routes.py` — implemented the complete `/chat` endpoint orchestration.
+- `llm_service.py` — added Groq SDK integration.
+- `config.py` — added Groq configuration values.
+- `.env` — added Groq API configuration.
+- Related schemas — added chat request/response models.
+
+**Other notes (environment/workflow facts, not project state):**
+- End-to-end testing was performed using authenticated `curl` requests.
+- Multi-turn testing verified that previous conversation history was correctly reconstructed and supplied to the LLM.
+- Invalid conversation access correctly returned the expected 404 response.
+
+**Working-style event (only if it produced a standing preference):**
+- none
+
+**Next session scope:**
+- Design and implement Server-Sent Events (SSE) streaming for `/chat`, including streaming execution flow, response lifecycle, and persistence after stream completion.

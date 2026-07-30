@@ -66,7 +66,8 @@ class Conversation(Base):
     messages=relationship(
         "Message",
         back_populates="conversation",
-        cascade="all,delete-orphan"
+        cascade="all,delete-orphan",
+        order_by="Message.created_at"
     )
 
 class Message(Base):

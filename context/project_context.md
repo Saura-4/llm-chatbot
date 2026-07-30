@@ -113,8 +113,8 @@ Standard pattern is what's actually in use; `Invoke-RestMethod` is the recommend
 
 # Next milestones
 
-- [ ] Chat endpoint (`POST /chat`, `conversation_id` in body — action route, deliberately separate from `/conversations/{id}/...` resource routes)
-- [ ] Groq integration
+- [x] Chat endpoint (`POST /chat`)
+- [x] Groq integration
 - [ ] SSE streaming
 - [ ] Redis integration
 - [ ] Docker deployment
@@ -211,9 +211,11 @@ Standard pattern is what's actually in use; `Invoke-RestMethod` is the recommend
 - Conversation history reconstructs context.
 - Database acts as persistent memory.
 - Every request rebuilds context before calling the LLM.
+- User messages are persisted independently of LLM generation; assistant messages exist only after successful generation.
+- Conversation history is converted into the provider's message format before being sent to the LLM.
+- Chat endpoints are action endpoints rather than resource endpoints because they execute an operation instead of directly representing a database resource.
+- LLM integrations belong in a dedicated service layer, keeping routers responsible only for HTTP concerns.
 - RAG is an optional retrieval layer that can later augment the chatbot with external knowledge.
-
----
 
 # Current database schema
 
@@ -282,6 +284,11 @@ Relationships
 - The future chat endpoint is `POST /chat` (flat, action-style, `conversation_id` in body) — not nested under `/conversations/{id}/...` — since "run the LLM" is an operation, not a resource with its own table.
 - Database logic extracted into a `crud/` layer (`crud/conversation.py`, `crud/message.py`); routers now only handle HTTP concerns (fetch-then-verify, status codes) and delegate all reads/writes to CRUD functions.
 - Image/attachment support for messages explicitly deferred — `MessageCreate` intentionally stays text-only (`content: str`) for now.
+- Groq integration uses the official Groq Python SDK rather than constructing raw HTTP requests.
+- `GROQ_API_KEY` and `GROQ_MODEL` are loaded from `.env` through `config.py`.
+- LLM communication is isolated in `llm_service.py`; routers orchestrate request flow but do not directly communicate with external APIs.
+- `/chat` follows the sequence: authenticate → verify conversation → persist user message → rebuild history → call the LLM → persist assistant reply → return the response.
+- If the LLM request fails, the user message remains persisted while no assistant message is created.
 
 ---
 
@@ -302,6 +309,7 @@ llm-chatbot-backend/
 │   ├── auth.py
 │   ├── dependencies.py
 │   ├── redis_client.py
+│   ├── llm_service.py
 │   ├── crud/
 │   │   ├── conversation.py
 │   │   └── message.py
@@ -335,10 +343,11 @@ llm-chatbot-backend/
 
 # Next session
 
-Move to designing the chat endpoint (`POST /chat`) from first principles — Groq API integration and request/response shape — before touching SSE streaming.
+Implement Server-Sent Events (SSE) streaming for the chat endpoint.
 
 Suggested order:
 
-1. Chat endpoint request/response design (no Groq call yet)
-2. Groq API integration
-3. SSE streaming
+1. Understand the SSE protocol and execution flow.
+2. Stream responses from Groq.
+3. Integrate streaming into FastAPI.
+4. Persist the completed assistant message after the stream finishes.
