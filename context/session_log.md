@@ -588,3 +588,72 @@ Design the chat endpoint (`POST /chat`) from first principles: request/response 
 
 **Next session scope:**
 - Design and implement Server-Sent Events (SSE) streaming for `/chat`, including streaming execution flow, response lifecycle, and persistence after stream completion.
+
+
+## Session 12: SSE Streaming for /chat
+
+**Date:** 2026-08-01
+**Scope in:** Added a new streaming endpoint alongside the existing non-streaming `/chat`, using SSE. Covered the SSE protocol/framing, Groq's `stream=True` mode, FastAPI's `StreamingResponse`, and the accumulate-then-persist pattern for saving the assistant message only after the full stream completes.
+**Scope deferred:** Proper async/threaded execution (running the blocking Groq generator via `run_in_threadpool` or a queue) — deliberately deferred in favor of the simpler approach: keeping the route a plain `def` (not `async def`), which FastAPI already runs in its own threadpool automatically, avoiding the blocking-event-loop problem without extra code today. Flagged as the natural upgrade path later.
+
+**Concepts covered, with confirmed understanding (comprehension-checked, correct answer stated first):**
+- SSE keeps one HTTP response open and writes chunks (`data: ...\n\n`) to it repeatedly, instead of the normal single-response model; `text/event-stream` tells the client to read incrementally.
+- Streaming and blocking/non-blocking are independent axes: streaming changes *when* the client receives bytes; async/blocking changes whether the server can do other work while waiting. Streaming alone does not solve concurrency.
+- A plain `def` FastAPI route runs in a threadpool automatically, which is why a blocking Groq loop inside a sync route doesn't necessarily lock the whole event loop the way it would inside `async def` without extra handling.
+- The "proper" fix for true non-blocking streaming is running the blocking generator in a separate thread (e.g. `run_in_threadpool`) while the async route awaits it — understood conceptually, deferred in practice today.
+- `response_model=` only applies when a route returns a plain object for FastAPI to validate/serialize; routes that return an already-constructed `Response` subclass (`StreamingResponse`, etc.) bypass that machinery entirely and are responsible for their own output.
+- The assistant message must be accumulated from stream chunks and persisted only once, after the generator's loop fully completes — not per-chunk.
+- SSE's "response already started" constraint means you can't change the HTTP status code mid-stream; errors after streaming has begun must be sent as an in-band SSE event, not a raised HTTP exception.
+
+**Initial misunderstandings (resolved — for pattern-tracking only):**
+- `payload= ChatRequest` (assignment) vs. `payload: ChatRequest` (type annotation): initially written with `=`, which gives FastAPI no type annotation to detect a request body, causing a 500; corrected to `:`.
+- SSE event formatting: initial draft had a malformed error-event dict (a Python set instead of a dict, from a missing `:`) and a malformed `event: done` line (missing colon, stray whitespace); corrected to proper SSE framing.
+
+**Files touched:**
+- `app/llm_service.py` — added `stream_chat_response()`, a generator using Groq's `stream=True`.
+- `app/routers/chat_routes.py` — added `POST /chat/streams` (SSE endpoint), existing non-streaming `/chat` left untouched.
+
+**Other notes (environment/workflow facts, not project state):**
+- Verified live: chunks printed progressively via `curl.exe -N`, ended with `event: done`, and the full assistant reply was confirmed persisted as one complete message via a follow-up `GET /conversations/{id}`.
+- Endpoint is currently named `/chat/streams` (plural) — developer intends to rename to `/chat/stream` later; purely cosmetic.
+
+**Working-style event (only if it produced a standing preference):**
+- Time-boxed deviation from "one topic per session, comprehension-checked": developer explicitly chose a same-day compressed pace (concepts explained once, no multi-round quizzing) to finish backend basics in a single day. Noted here as a one-off, not a new standing rule — see `project_context.md` "How I learn" for the unchanged default.
+
+**Next session scope:**
+Redis integration — see Session 13.
+
+---
+
+## Session 13: Redis Caching for get_current_user
+
+**Date:** 2026-08-01
+**Scope in:** Wired up `redis_client.py` (previously empty) following the same connection pattern as `database.py`. Added caching to `get_current_user()`: cache hit skips Postgres entirely; cache miss queries Postgres, then populates Redis with a TTL. Verified the full miss → DB hit → repopulate → subsequent hit cycle live.
+**Scope deferred:** JWT/user ban revocation list, `is_banned` column + migration, admin role (`is_admin`) + `get_current_admin` dependency, and the planned `POST /admin/users/{id}/ban` endpoint — all deliberately deferred by developer's own choice, to be picked up in a later session. Redis persistence (RDB/AOF) for surviving restarts was discussed conceptually as a tradeoff relevant to the revocation-list feature specifically, not to caching, and was not implemented.
+
+**Concepts covered, with confirmed understanding (comprehension-checked, correct answer stated first):**
+- Redis is a separate, independently-running server-side process (same category as Postgres) — restarting the FastAPI app does not clear Redis's data, since Redis has its own lifecycle.
+- Caching `get_current_user()`'s DB lookup is a performance optimization, not a security feature — the JWT signature already proves identity cryptographically; the DB (or cache) lookup exists to confirm current account validity.
+- `setex(key, ttl, value)` ("set with expiry") is the core mechanism: a bounded staleness window traded for fewer DB hits, rather than caching forever.
+- Redis stores only strings, so ORM objects must be serialized (JSON) on write and reconstructed on read; `SimpleNamespace` was used to preserve dot-attribute access (`.id`, `.email`) on a cache hit without needing a real `User`/SQLAlchemy object.
+- Caching and revocation are two independent, separately-optional Redis features: caching is a bounded-staleness performance win; instant token revocation (for e.g. a ban) requires a separate blacklist mechanism, since caching alone would *worsen* an instant-ban guarantee, not help it.
+- Redis's client-server relationship: entirely server-side infrastructure, same trust boundary as Postgres — the calling client never interacts with Redis directly and cannot see or influence what's cached.
+
+**Initial misunderstandings (resolved — for pattern-tracking only):**
+- Initially conflated "persist the revocation list across Redis restarts" with general caching scope; corrected to understanding these are two separate features (bounded-staleness cache vs. a security-critical revocation list with its own durability tradeoffs), and that the caching work just done has no revocation logic in it at all.
+- Initially expected `"DB hit"` to print on the very first post-restart request as proof of a cold cache; corrected to realizing Redis (a separate process) had retained a still-valid cached entry from before the app restart, requiring a manual `DEL` to force a genuine cache miss for a clean test.
+
+**Files touched:**
+- `app/config.py` — added `REDIS_HOST`, `REDIS_PORT`.
+- `.env` — added `REDIS_HOST`, `REDIS_PORT`.
+- `app/redis_client.py` — implemented `redis_client` connection (previously empty file).
+- `app/dependencies.py` — `get_current_user()` now checks Redis cache first; on miss, queries Postgres as before, then writes result to Redis with a 300-second TTL.
+
+**Other notes (environment/workflow facts, not project state):**
+- Verified live via repeated `GET /auth/me` calls plus a manual `docker exec ... redis-cli DEL user:<email>` to force a clean miss/hit comparison; confirmed `"DB hit"` printed only on the forced-miss call and not on the immediate follow-up call.
+
+**Working-style event (only if it produced a standing preference):**
+- Same one-off compressed-pace choice as Session 12 continued into this session; no new standing rule.
+
+**Next session scope:**
+Docker deployment — package the FastAPI app itself into the existing `docker-compose.yml` (Postgres and Redis are already containerized; the app is not yet).

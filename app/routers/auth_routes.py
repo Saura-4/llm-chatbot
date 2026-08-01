@@ -28,6 +28,7 @@ def signup(user_data:UserCreate,db:Session=Depends(get_db)):
 @router.post("/login",response_model=Token)
 def login(user_data: UserLogin,db: Session= Depends(get_db)):
     user=db.query(User).filter(User.email==user_data.email).first()
+    
 
     if not user or not verify_password(user_data.password,user.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
