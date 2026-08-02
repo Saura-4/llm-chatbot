@@ -1,4 +1,7 @@
 import redis
-from app.config import REDIS_HOST, REDIS_PORT
+import os
 
-redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+redis_client = redis.from_url(
+    os.getenv("REDIS_URL"),
+    decode_responses=True,
+)
