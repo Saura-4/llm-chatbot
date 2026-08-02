@@ -1,7 +1,9 @@
-import redis
 import os
+import redis
+
+REDIS_URL = os.getenv("REDIS_URL")
 
 redis_client = redis.from_url(
-    os.getenv("REDIS_URL"),
+    REDIS_URL,
     decode_responses=True,
 )
