@@ -117,8 +117,9 @@ Standard pattern is what's actually in use; `Invoke-RestMethod` is the recommend
 - [x] Groq integration
 - [x] SSE streaming
 - [x] Redis integration (caching only — revocation/ban deferred)
-- [ ] Docker deployment
+- [ ] Docker deployment — architecture decided (see Decisions); implementation not started
 - [ ] Optional RAG integration
+- [ ] Frontend (framework undecided)
 - [ ] Deferred: `is_banned` column + migration, admin role, ban endpoint, JWT revocation list
 
 ---
@@ -307,6 +308,22 @@ Relationships
 - SSE errors mid-stream are sent as an in-band event, not an HTTP exception, since the response has already started and its status code can't change.
 - `get_current_user()` checks Redis before Postgres; on a miss it queries Postgres and repopulates Redis with a 5-minute TTL.
 - Ban/admin/revocation-list work (originally scoped alongside Redis) is explicitly deferred to a future session — caching was implemented alone today.
+- Deployment target: Render (FastAPI web service, Dockerfile-based) + Neon
+  (managed Postgres, permanent free tier, no expiry) + Render (managed
+  Key Value/Redis, free tier). Chosen over a self-managed VM (Azure/
+  DigitalOcean via GitHub Student Pack credits) — project judged not worth
+  spending credits on; goal is demonstrating backend competence for a
+  resume link, not running a durable product, so free-tier cold starts and
+  Render's 30-day-Postgres-expiry-avoided-via-Neon are acceptable tradeoffs.
+- Frontend will be deployed separately (Vercel or similar) from the backend
+  — decoupled deployment, not bundled into the same Compose/Docker setup.
+- Own domain (`sauravchourasia.me`) will be considered later, after the
+  Render/Neon deployment is live and working — not a blocker for initial
+  deployment.
+- `app/redis_client.py` will need a code change before deployment: current
+  version has no password/auth support, which local Docker Redis doesn't
+  require but Render's managed Redis will. Exact approach (separate
+  `REDIS_PASSWORD` env var vs. single Redis connection URL) not yet decided.
 
 ---
 

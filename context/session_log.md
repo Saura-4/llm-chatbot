@@ -657,3 +657,95 @@ Redis integration — see Session 13.
 
 **Next session scope:**
 Docker deployment — package the FastAPI app itself into the existing `docker-compose.yml` (Postgres and Redis are already containerized; the app is not yet).
+
+## Session 14: Deployment Architecture Planning (Docker, Hosting, Managed DB/Redis)
+
+**Date:** 2026-08-02
+**Scope in:** Conceptual groundwork for containerized deployment — Docker layer
+caching, secrets handling (.env vs. image baking), reverse-proxy/TLS concepts,
+and evaluation of hosting options (Azure VM+Cloudflare vs. Render vs. Railway
+vs. Neon). Final architecture decision made: Render (web service) + Neon
+(Postgres) + Render (Key Value/Redis).
+**Scope deferred:** All implementation — no Dockerfile/docker-compose changes
+were actually applied to disk this session; the Redis client code fix
+(managed Redis requires auth, current `redis_client.py` has none) was
+identified but left as an open design question, not resolved; frontend
+framework choice remains undecided.
+
+**Concepts covered, with confirmed understanding (comprehension-checked,
+correct answer stated first):**
+- `localhost` inside a container refers to that container's own network
+  namespace, not the host machine or any sibling container — this is why
+  `DATABASE_URL`/`REDIS_HOST` need to change from `localhost` to the Compose
+  service names (`postgres`, `redis`) once the app itself becomes a container
+  in the same `docker-compose.yml`.
+- Docker layer caching invalidates a given layer — and every layer after it —
+  only when that layer's own input changes. Copying `requirements.txt` and
+  running `pip install` as their own step *before* `COPY . .` means editing
+  application code alone triggers only the cheap `COPY . .` re-run on
+  rebuild, not a full dependency reinstall; traced correctly layer-by-layer
+  against a real hypothetical code edit.
+- `.env` must never be `COPY`'d into a Dockerfile, because image layers are
+  persistent and remain extractable/inspectable even if a later layer
+  deletes the file. The correct mechanism is `env_file:`/`environment:` in
+  `docker-compose.yml`, which injects variables into the *running container*
+  at start time, without ever writing them into the image itself — meaning
+  the image is safe to share publicly, while `.env` (excluded via
+  `.gitignore`, never committed) must be supplied independently by anyone
+  else running the project, using `.env.example` as the template of which
+  variables are required.
+- `os.getenv()` in `config.py` has no awareness of *how* an environment
+  variable got set (real `.env` file read via `load_dotenv()`, Compose's
+  `env_file` injection, or manual shell export) — it only sees whatever
+  exists in the process environment, which is why `load_dotenv()` becomes a
+  harmless no-op inside a Compose-managed container.
+
+**Concepts explained (not yet checked):**
+- Host-port:container-port mapping (e.g. `"5432:5432"`) only governs traffic
+  entering from *outside* the Docker network (e.g. the Windows host);
+  sibling containers on the same Compose network connect directly via
+  service name + the container's internal port, bypassing the host mapping
+  entirely.
+- Cloudflare's proxy mode ("orange-cloud") routes visitor traffic to
+  Cloudflare's edge first, which terminates the public-facing TLS
+  certificate there — the origin server never needs its own public cert for
+  that hop, since the browser never connects to it directly. Three modes
+  (Flexible/Full/Full-strict) differ in whether the second hop
+  (Cloudflare→origin) is encrypted and whether that cert must be
+  CA-trusted; "Flexible" was identified as the simplest fit for a
+  portfolio-scale deployment. This entire line of discussion is currently
+  moot — deployment target changed to Render/Neon, which don't involve a
+  self-managed origin server or Cloudflare proxy at all.
+- Render doesn't run a `docker-compose.yml` as one stack the way local dev
+  does — each piece (web service, Postgres, Redis) is a separately managed
+  resource, and Render supplies the resulting connection info as environment
+  variables rather than the developer inventing credentials themselves.
+
+**Files touched:**
+- None. Architecture/decision session only.
+
+**Other notes (environment/workflow facts, not project state):**
+- Current hosting-platform facts (GitHub Student Pack contents, Render/
+  Railway/Neon free-tier specifics) were verified via web search this
+  session, dated 2026-08-02 — these are subject to change and were not
+  pulled from training data.
+- Domain `sauravchourasia.me` already owned by developer. GitHub Student
+  Pack includes $100 Azure credit, available but deliberately not used for
+  this project — developer judged the project not worth spending credits
+  on, and is fine with data periodically resetting on a free tier.
+- `groq` in `requirements.txt` was found unpinned; confirmed installed
+  version is `1.6.0` via `pip show groq` — not yet written into the file.
+
+**Working-style event (only if it produced a standing preference):**
+- None new.
+
+**Next session scope:**
+Implement the deployment: (1) pin `groq==1.6.0` in `requirements.txt`;
+(2) fix `app/redis_client.py` to support the auth Render's managed Redis
+requires — resolve the deferred design choice (separate `REDIS_PASSWORD` env
+var vs. a single Redis connection URL) before writing the code; (3) create
+the Neon Postgres project, obtain its connection string (note the required
+`?sslmode=require` suffix); (4) create the Render web service from the repo
+(Dockerfile-based) plus Render's free Key Value instance; (5) wire all
+resulting connection info into Render's environment variables; (6) verify
+one full end-to-end request against the live deployed URL.
