@@ -12,3 +12,15 @@ def say_hello():
 app.include_router(conversation_routes.router, tags=["conversations"])
 
 app.include_router(chat_routes.router, tags=["chat"])
+
+@app.get("/")
+def root():
+    return {
+        "status": "ok",
+        "service": "LLM Chatbot API",
+        "docs": "/docs"
+    }
+
+@app.get("/healthz")
+def health():
+    return {"status": "healthy"}

@@ -749,3 +749,44 @@ the Neon Postgres project, obtain its connection string (note the required
 (Dockerfile-based) plus Render's free Key Value instance; (5) wire all
 resulting connection info into Render's environment variables; (6) verify
 one full end-to-end request against the live deployed URL.
+
+## Session 15: Production deployment (Render + Neon + Upstash)
+
+**Date:** 2026-08-03
+
+**Scope in:** Completed production deployment of the backend using Render, Neon PostgreSQL, and Upstash Redis. Regenerated the initial Alembic migration, migrated the production database, verified authentication, conversation management, chat persistence, and cleaned assistant responses by stripping reasoning blocks before persistence.
+
+**Scope deferred:** Frontend development, Render pre-deploy migration automation (currently unavailable through the service configuration), health endpoint, CORS tightening, and additional production polish.
+
+**Concepts covered, with confirmed understanding (comprehension-checked, correct answer stated first):**
+- Alembic's initial migration should represent the complete current schema before the first production deployment; a partial migration history should be replaced before production if no deployed database depends on it.
+- Docker service hostnames such as `postgres` only resolve inside the Docker Compose network; local tools require `localhost` or an external database such as Neon.
+- Neon acts as the production PostgreSQL database while Render hosts only the FastAPI application.
+- Managed Redis services are typically accessed through a single authenticated connection URL (`REDIS_URL`) rather than separate host and port variables.
+- Assistant reasoning should be removed in the backend before persistence so databases and API consumers never receive reasoning traces.
+- End-to-end deployment verification requires testing authentication, conversation creation, chat generation, assistant persistence, and conversation retrieval against the deployed service.
+
+**Initial misunderstandings (resolved — for pattern-tracking only):**
+- Alembic migration history: initially assumed the existing conversation migration was sufficient; corrected to regenerating a complete initial migration before the first production deployment.
+- Deployment database connection: initially attempted to use the Docker hostname `postgres`; corrected to using the Neon connection string for production.
+
+**Files touched:**
+- `app/database.py` — enabled `pool_pre_ping=True` for SQLAlchemy.
+- `app/redis_client.py` — switched to `redis.from_url(REDIS_URL)`.
+- `app/llm_service.py` — strips `<think>...</think>` blocks before returning assistant responses.
+- `.env` — updated to use Neon and Upstash production configuration.
+- `alembic/versions/*` — regenerated clean initial migration.
+- Render service configuration — deployed production backend and configured environment variables.
+
+**Other notes (environment/workflow facts, not project state):**
+- Backend successfully deployed on Render.
+- Neon schema created through Alembic migration.
+- Upstash Redis successfully connected.
+- `/docs`, signup, login, conversation creation, chat generation, and persistence verified against the production deployment.
+- Swagger Authorize flow is currently not used for authenticated testing; PowerShell `Invoke-RestMethod` with explicit `Authorization` headers is used instead.
+
+**Working-style event (only if it produced a standing preference):**
+- none
+
+**Next session scope:**
+- Build the frontend beginning with authentication, then conversation management, followed by chat integration with the deployed backend.

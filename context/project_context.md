@@ -32,10 +32,15 @@ Build a production-grade LLM chatbot backend using FastAPI, PostgreSQL, SQLAlche
 - Groq API
 - SSE Streaming
 - Docker Compose
+- Neon PostgreSQL
+- Upstash Redis
+- Render
 
 ---
 
 # Environment setup
+
+Development
 
 - Windows host.
 - Ubuntu VM (VirtualBox) runs Docker because Docker Desktop cannot be used due to Hyper-V conflicts.
@@ -43,7 +48,15 @@ Build a production-grade LLM chatbot backend using FastAPI, PostgreSQL, SQLAlche
 - PostgreSQL and Redis run inside Docker.
 - VirtualBox port forwarding exposes PostgreSQL and Redis to Windows.
 - FastAPI runs inside a Windows virtual environment.
-- Protected routes are tested using `curl.exe` from PowerShell.
+- Protected routes are tested using `curl.exe` from PowerShell or `Invoke-RestMethod`.
+
+Production
+
+- Backend deployed on Render.
+- PostgreSQL migrated to Neon.
+- Redis migrated to Upstash.
+- Environment variables managed through Render.
+- Database migrations managed with Alembic.
 
 ---
 
@@ -117,8 +130,12 @@ Standard pattern is what's actually in use; `Invoke-RestMethod` is the recommend
 - [x] Groq integration
 - [x] SSE streaming
 - [x] Redis integration (caching only — revocation/ban deferred)
-- [ ] Docker deployment — architecture decided (see Decisions); implementation not started
-- [ ] Optional RAG integration
+- [x] Production deployment (Render)
+- [x] Neon PostgreSQL deployment
+- [x] Upstash Redis deployment
+- [x] Initial Alembic migration created
+- [x] Production database migrated
+- [x] End-to-end production deployment verified
 - [ ] Frontend (framework undecided)
 - [ ] Deferred: `is_banned` column + migration, admin role, ban endpoint, JWT revocation list
 
@@ -231,6 +248,7 @@ Standard pattern is what's actually in use; `Invoke-RestMethod` is the recommend
 - Plain `def` FastAPI routes run in a threadpool automatically, avoided needing manual thread handling for today's blocking Groq stream loop; `run_in_threadpool` remains the flagged upgrade path for a more correct async version.
 - `response_model=` does not apply to routes returning a `Response` subclass (e.g. `StreamingResponse`) — those bypass FastAPI's serialization entirely.
 - Assistant messages from a stream are accumulated in-memory and persisted once, after the generator completes — never per-chunk.
+- Assistant reasoning blocks (`<think>...</think>`) are stripped inside `llm_service.py` before persistence and before the API response is returned, ensuring conversation history contains only user-visible responses.
 
 # Current database schema
 
@@ -308,22 +326,11 @@ Relationships
 - SSE errors mid-stream are sent as an in-band event, not an HTTP exception, since the response has already started and its status code can't change.
 - `get_current_user()` checks Redis before Postgres; on a miss it queries Postgres and repopulates Redis with a 5-minute TTL.
 - Ban/admin/revocation-list work (originally scoped alongside Redis) is explicitly deferred to a future session — caching was implemented alone today.
-- Deployment target: Render (FastAPI web service, Dockerfile-based) + Neon
-  (managed Postgres, permanent free tier, no expiry) + Render (managed
-  Key Value/Redis, free tier). Chosen over a self-managed VM (Azure/
-  DigitalOcean via GitHub Student Pack credits) — project judged not worth
-  spending credits on; goal is demonstrating backend competence for a
-  resume link, not running a durable product, so free-tier cold starts and
-  Render's 30-day-Postgres-expiry-avoided-via-Neon are acceptable tradeoffs.
-- Frontend will be deployed separately (Vercel or similar) from the backend
-  — decoupled deployment, not bundled into the same Compose/Docker setup.
-- Own domain (`sauravchourasia.me`) will be considered later, after the
-  Render/Neon deployment is live and working — not a blocker for initial
-  deployment.
-- `app/redis_client.py` will need a code change before deployment: current
-  version has no password/auth support, which local Docker Redis doesn't
-  require but Render's managed Redis will. Exact approach (separate
-  `REDIS_PASSWORD` env var vs. single Redis connection URL) not yet decided.
+- Deployment target finalized: Render (FastAPI), Neon (PostgreSQL), and Upstash (Redis).
+- Redis uses a single `REDIS_URL` connection string (`redis.from_url(...)`) instead of separate host/port/password variables.
+- Initial Alembic migration was regenerated before the first production deployment to establish a clean migration history.
+- Production deployments use Neon as the canonical database.
+- Assistant reasoning (`<think>...</think>`) is removed in the backend (`llm_service.py`) before persistence instead of being filtered in the frontend.
 
 ---
 
@@ -338,12 +345,12 @@ llm-chatbot-backend/
 ├── app/
 │   ├── main.py
 │   ├── database.py
-│   ├── config.py            # now includes REDIS_HOST, REDIS_PORT
+│   ├── config.py            # DATABASE_URL, REDIS_URL, GROQ settings
 │   ├── models.py
 │   ├── schemas.py
 │   ├── auth.py
 │   ├── dependencies.py      # now Redis-cache-aware
-│   ├── redis_client.py      # now implemented (was empty)
+│   ├── redis_client.py      # uses redis.from_url(REDIS_URL)
 │   ├── llm_service.py       # now includes stream_chat_response()
 │   ├── crud/
 │   │   ├── conversation.py
@@ -355,7 +362,7 @@ llm-chatbot-backend/
 ├── docker-compose.yml
 ├── Dockerfile
 ├── requirements.txt
-└── .env                      # now includes REDIS_HOST, REDIS_PORT
+└── .env                      # DATABASE_URL (Neon), REDIS_URL (Upstash), GROQ settings
 ```
 
 ---
@@ -377,5 +384,4 @@ llm-chatbot-backend/
 ---
 
 # Next session
-
-Docker deployment — package the FastAPI app into `docker-compose.yml` alongside the already-containerized Postgres and Redis.
+Frontend development — authentication flow, conversation sidebar, chat interface, and integration with the deployed backend.
