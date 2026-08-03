@@ -1,0 +1,28 @@
+
+> llm-chatbot-frontend@1.0.0 dev
+> next dev
+
+   ▲ Next.js 15.5.22
+   - Local:        http://localhost:3000
+   - Network:      http://192.168.56.1:3000
+   - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 3.2s
+ ○ Compiling /login ...
+ ✓ Compiled /login in 5.9s (605 modules)
+ HEAD /login 200 in 6544ms
+ GET /login 200 in 191ms
+   Reload env: .env.local
+ ✓ Compiled in 571ms (605 modules)
+ ○ Compiling /_not-found ...
+ ✓ Compiled /_not-found in 523ms (596 modules)
+ GET /login 404 in 895ms
+   Reload env: .env.local
+ ✓ Compiled in 500ms (591 modules)
+ ✓ Compiled /_not-found in 303ms (596 modules)
+ GET /login 404 in 578ms
+ HEAD /login 200 in 155ms
+ ○ Compiling /signup ...
+ ✓ Compiled /signup in 702ms (593 modules)
+ HEAD /signup 200 in 1102ms
