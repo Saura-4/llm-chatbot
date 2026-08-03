@@ -12,7 +12,11 @@ def strip_thinking(text: str) -> str:
     if not text:
         return ""
 
-    return THINK_PATTERN.sub("", text).strip()
+    text = THINK_PATTERN.sub("", text)
+    if "<think>" in text:
+        text = text.split("<think>")[0]
+
+    return text.strip()
 
 def get_chat_response(messages: list[dict])->str:
     response=client.chat.completions.create(
@@ -26,7 +30,7 @@ def get_chat_response(messages: list[dict])->str:
 def generate_title(user_message: str) -> str:
     try:
         response = client.chat.completions.create(
-            model=GROQ_MODEL,
+            model="llama-3.1-8b-instant",
             messages=[
                 {"role": "system", "content": "Generate a short, concise 3-5 word title for the conversation based on this first message. Do not include quotes, periods, or extra punctuation."},
                 {"role": "user", "content": user_message}
