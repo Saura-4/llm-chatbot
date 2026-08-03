@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.dependencies import get_current_user
 from app.database import get_db
 from app.crud import message as message_crud, conversation as conversation_crud
-from app.llm_service import get_chat_response, stream_chat_response
+from app.llm_service import get_chat_response, stream_chat_response, generate_title
 from app.schemas import ChatRequest, ChatResponse, MessageOut
 from app.models import User, MessageRole
 
@@ -26,6 +26,10 @@ def chat(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,detail="Conversation Not Found")
     if conversation.user_id != Current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your Conversation")
+
+    if conversation.title == "New Conversation" or not conversation.title:
+        new_title = generate_title(payload.content)
+        conversation_crud.rename_conversation(db, conversation, new_title)
 
     user_message=message_crud.create_message(db,conversation.id,MessageRole.USER,payload.content)
 
@@ -63,6 +67,10 @@ def chat_stream(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation Not Found")
     if conversation.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your Conversation")
+
+    if conversation.title == "New Conversation" or not conversation.title:
+        new_title = generate_title(payload.content)
+        conversation_crud.rename_conversation(db, conversation, new_title)
 
     user_message= message_crud.create_message(db,conversation.id,MessageRole.USER,payload.content)
 

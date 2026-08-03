@@ -23,6 +23,22 @@ def get_chat_response(messages: list[dict])->str:
     response.choices[0].message.content
 )
 
+def generate_title(user_message: str) -> str:
+    try:
+        response = client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[
+                {"role": "system", "content": "Generate a short, concise 3-5 word title for the conversation based on this first message. Do not include quotes, periods, or extra punctuation."},
+                {"role": "user", "content": user_message}
+            ],
+            temperature=0.3,
+            max_tokens=15,
+        )
+        title = strip_thinking(response.choices[0].message.content).strip('"\' .\n')
+        return title if title else "New Conversation"
+    except Exception:
+        return "New Conversation"
+
 def stream_chat_response(messages: list[dict]):
     """
     Yields small text pieces as Groq generates them, instead of
