@@ -35,6 +35,16 @@ Build a production-grade LLM chatbot backend using FastAPI, PostgreSQL, SQLAlche
 - Neon PostgreSQL
 - Upstash Redis
 - Render
+- Next.js (Frontend)
+- Tailwind CSS (Frontend)
+- Vercel (Frontend Deployment)
+
+---
+
+# Live Links
+
+- **Backend (Render)**: `https://llm-chatbot-qacm.onrender.com`
+- **Frontend (Vercel)**: `https://llm-chatbot-blush.vercel.app`
 
 ---
 
@@ -136,8 +146,9 @@ Standard pattern is what's actually in use; `Invoke-RestMethod` is the recommend
 - [x] Initial Alembic migration created
 - [x] Production database migrated
 - [x] End-to-end production deployment verified
-- [ ] Frontend (framework undecided)
+- [x] Frontend (Next.js, Tailwind, Vercel)
 - [ ] Deferred: `is_banned` column + migration, admin role, ban endpoint, JWT revocation list
+- [ ] Future: RAG (Retrieval-Augmented Generation) integration
 
 ---
 
@@ -331,6 +342,11 @@ Relationships
 - Initial Alembic migration was regenerated before the first production deployment to establish a clean migration history.
 - Production deployments use Neon as the canonical database.
 - Assistant reasoning (`<think>...</think>`) is removed in the backend (`llm_service.py`) before persistence instead of being filtered in the frontend.
+- Frontend implemented as a Next.js application (App Router) with Tailwind CSS for styling.
+- Frontend uses Server-Sent Events (SSE) to consume real-time markdown streaming from the backend.
+- UI features glassmorphic styling, mobile-responsive sidebar drawer, and fully styled code blocks with syntax highlighting (`react-syntax-highlighter`) and copy-to-clipboard functionality.
+- Auto-titles for conversations are generated silently on the backend using the ultra-fast `llama-3.1-8b-instant` model to prevent reasoning tokens from breaking the title format.
+- Backend CORS explicitly configured to accept traffic from local development (`http://localhost:3000`) and the production Vercel deployment via environment variable parsing.
 
 ---
 
@@ -362,8 +378,13 @@ llm-chatbot-backend/
 ├── docker-compose.yml
 ├── Dockerfile
 ├── requirements.txt
-└── .env                      # DATABASE_URL (Neon), REDIS_URL (Upstash), GROQ settings
-```
+├── .env                      # DATABASE_URL (Neon), REDIS_URL (Upstash), GROQ settings
+└── frontend/
+    ├── app/                  # Next.js App Router (login, signup, chat pages)
+    ├── components/           # React components (ChatClient, AuthForm)
+    ├── lib/                  # API client and utilities
+    ├── package.json
+    └── tailwind.config.ts
 
 ---
 
@@ -384,4 +405,4 @@ llm-chatbot-backend/
 ---
 
 # Next session
-Frontend development — authentication flow, conversation sidebar, chat interface, and integration with the deployed backend.
+TBD — potentially RAG (Retrieval-Augmented Generation) integration or administrative features (JWT revocation/user bans).

@@ -790,3 +790,35 @@ one full end-to-end request against the live deployed URL.
 
 **Next session scope:**
 - Build the frontend beginning with authentication, then conversation management, followed by chat integration with the deployed backend.
+
+## Session 16: Frontend Implementation & Polish
+
+**Date:** 2026-08-03
+
+**Scope in:** Built the Next.js frontend, implemented a responsive glassmorphic UI with Tailwind CSS, added Server-Sent Events (SSE) markdown streaming via `react-markdown` and `react-syntax-highlighter`, implemented JWT auth logic, added auto-generated titles using `llama-3.1-8b-instant`, configured CORS for specific origins, and deployed the frontend to Vercel.
+
+**Scope deferred:** None.
+
+**Concepts covered, with confirmed understanding (comprehension-checked, correct answer stated first):**
+- CORS configuration: Backend explicit `allow_origins` parsing ensures multiple valid clients (local and production) can access the API securely without resorting to wildcards for origins.
+- Syntax Highlighting integration: Custom `code` rendering inside `react-markdown` requires overriding `pre` block logic to prevent React DOM hydration mismatch errors (`<div>` nested in `<pre>`).
+- Auto-titles reasoning bypass: Switching to a non-reasoning, non-thinking model (`llama-3.1-8b-instant`) ensures generation of concise text without broken/truncated XML tags (`<think>`).
+
+**Initial misunderstandings (resolved — for pattern-tracking only):**
+- None.
+
+**Files touched:**
+- `frontend/*` — Entire Next.js application structure created.
+- `app/main.py` & `app/config.py` — Added support for multiple origins in `FRONTEND_ORIGINS`.
+- `app/llm_service.py` — Added `stream_chat_response` generator, tweaked `strip_thinking` for unclosed tags, changed title generation model.
+
+**Other notes (environment/workflow facts, not project state):**
+- Frontend successfully deployed on Vercel at `https://llm-chatbot-blush.vercel.app`
+- Backend active on Render at `https://llm-chatbot-qacm.onrender.com`
+- User has committed and pushed both the `app/` changes and the new `frontend/` directory to the same GitHub monorepo.
+
+**Working-style event (only if it produced a standing preference):**
+- none
+
+**Next session scope:**
+- TBD — potentially RAG (Retrieval-Augmented Generation) integration or administrative features (JWT revocation/user bans).
